@@ -1,0 +1,89 @@
+name: oidc-negative-test
+
+# Proof that the deploy role is scoped to the production environment.
+# This job runs in the same repository and gets an OIDC token exactly like the
+# deploy job, but it does NOT declare `environment: production`. Its token
+# therefore carries sub = repo:<owner>/<repo>:ref:refs/heads/<branch>, which
+# the trust policy does not accept. The workflow passes only if AWS refuses.
+#
+# Run it after a successful deploy: that run proves the same role ARN works
+# from the production environment, so a refusal here is caused by the trust
+# policy and not by a wrong ARN.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assume-without-environment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write # same token request as the deploy job
+      contents: read
+    env:
+      ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      # Without these variables the test would fail for the wrong reason.
+      - name: Check repository variables
+        run: |
+          if [ -z "$ROLE_ARN" ] || [ -z "$AWS_REGION" ]; then
+            echo "::error::Set the AWS_DEPLOY_ROLE_ARN and AWS_REGION repository variables first."
+            exit 1
+          fi
+
+      - name: Request an OIDC token for this job
+        run: |
+          curl --silent --fail \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+          | jq -r .value > "$RUNNER_TEMP/token"
+          # Print only the claims the trust policy checks, never the token itself.
+          python3 - "$RUNNER_TEMP/token" <<'PY'
+          import base64, json, sys
+          payload = open(sys.argv[1]).read().strip().split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+          print(f"aud = {claims['aud']}")
+          print(f"sub = {claims['sub']}")
+          PY
+
+      # Same API call configure-aws-credentials makes, run with the AWS CLI so
+      # the exact error from STS ends up in the log.
+      - name: Try to assume the deploy role (expected to fail)
+        id: assume
+        continue-on-error: true
+        run: |
+          aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE_ARN" \
+            --role-session-name "gha-negative-${GITHUB_RUN_ID}" \
+            --web-identity-token "file://${RUNNER_TEMP}/token" \
+            --duration-seconds 900 \
+            --query 'AssumedRoleUser.Arn' --output text \
+            2> "$RUNNER_TEMP/sts-error.txt"
+
+      - name: Assert that AWS refused the token
+        env:
+          OUTCOME: ${{ steps.assume.outcome }}
+        run: |
+          rm -f "$RUNNER_TEMP/token"
+          cat "$RUNNER_TEMP/sts-error.txt"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "::error::A job without the production environment assumed the deploy role. The trust policy is too broad."
+            exit 1
+          fi
+          if ! grep -q "AccessDenied" "$RUNNER_TEMP/sts-error.txt"; then
+            echo "::error::The call failed, but not with AccessDenied. Check the error above before trusting this result."
+            exit 1
+          fi
+          echo "PASS: STS denied AssumeRoleWithWebIdentity for a job outside the production environment."
+          {
+            echo "### OIDC negative test: PASS"
+            echo
+            echo "A job in this repository, without \`environment: production\`, could not assume the deploy role."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/sts-error.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

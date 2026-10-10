@@ -1,0 +1,129 @@
+name: deploy
+
+# Builds the app image, pushes it to ECR and rolls it out on ECS Fargate.
+# AWS access comes from a short-lived OIDC session; there are no AWS keys in
+# this repository or in its secrets.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One production deploy at a time. A newer push waits instead of cancelling a
+# rollout that is already in progress.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # Must match the Terraform outputs of terraform/infra (project_name defaults).
+  ECR_REPOSITORY: gha-ecs-oidc-demo
+  ECS_CLUSTER: gha-ecs-oidc-demo
+  ECS_SERVICE: gha-ecs-oidc-demo
+  TASK_FAMILY: gha-ecs-oidc-demo
+  CONTAINER_NAME: app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The deploy role only trusts tokens whose sub claim is
+    # repo:<owner>/<repo>:environment:production, which GitHub issues only to
+    # jobs that run in this environment.
+    environment: production
+    permissions:
+      id-token: write # request the OIDC token
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+          role-duration-seconds: 3600
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          image="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+          # Tags are immutable. On a re-run of the same commit the image is
+          # already in ECR, so skip the push instead of failing on it.
+          found=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'length(images)' --output text)
+          if [ "$found" != "0" ]; then
+            echo "Image ${IMAGE_TAG} already in ECR, skipping build and push."
+            exit 0
+          fi
+
+          docker build --build-arg APP_VERSION="$IMAGE_TAG" --tag "$image" app
+          docker push "$image"
+
+      - name: Download current task definition
+        run: |
+          # Read-only fields returned by DescribeTaskDefinition are not valid
+          # input for RegisterTaskDefinition, so drop them.
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query taskDefinition --output json \
+          | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                    .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
+          > "$RUNNER_TEMP/task-definition.json"
+
+      - name: Render task definition with the new image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
+        with:
+          task-definition: ${{ runner.temp }}/task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image }}
+
+      - name: Deploy to ECS
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2.6.4
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Job summary
+        if: always()
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          IMAGE_TAG: ${{ github.sha }}
+          TASK_DEF_ARN: ${{ steps.deploy.outputs.task-definition-arn }}
+          ALB_URL: ${{ vars.ALB_URL }}
+          OUTCOME: ${{ steps.deploy.outcome }}
+        run: |
+          {
+            echo "### Deploy to production: ${OUTCOME}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image tag | \`${IMAGE_TAG}\` |"
+            echo "| Image | \`${IMAGE:-n/a}\` |"
+            echo "| Task definition | \`${TASK_DEF_ARN:-n/a}\` |"
+            echo "| ALB URL | ${ALB_URL:-set the ALB_URL repository variable} |"
+          } >> "$GITHUB_STEP_SUMMARY"
