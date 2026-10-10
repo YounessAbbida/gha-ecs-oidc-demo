@@ -1,9 +1,12 @@
 name: ci
 
-# Pull request checks. This workflow never receives AWS credentials:
-# no id-token permission, no secrets, no role to assume.
+# Code checks for pushes to main and pull requests. This workflow never
+# receives AWS credentials: no id-token permission, no secrets, no role to assume.
 on:
+  push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +17,7 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

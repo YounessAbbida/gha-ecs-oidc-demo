@@ -1,6 +1,14 @@
 # GitHub Actions to AWS ECS, with no stored AWS keys
 
-A working reference for deploying a container from GitHub Actions to AWS ECS
+[![ci](https://github.com/YounessAbbida/gha-ecs-oidc-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/YounessAbbida/gha-ecs-oidc-demo/actions/workflows/ci.yml)
+
+> **Reference implementation — not deployed.** This repository is published as
+> code and documentation only. It has not been applied to an AWS account, and
+> nothing here claims a live run. CI checks the code on every push (tests,
+> container build, `terraform validate`, tflint, Checkov, actionlint) without
+> any AWS credentials.
+
+A reference for deploying a container from GitHub Actions to AWS ECS
 Fargate using OpenID Connect (OIDC) instead of AWS access keys. Everything is
 Terraform; every permission is scoped and explained.
 
@@ -19,8 +27,8 @@ can edit a workflow (or leak its logs) can use it.
   requests, other branches and forks are refused.
 - **The deploy role can do one job.** Push to one ECR repository, update one
   ECS service, and pass two specific roles to ECS. Nothing else.
-- **Proven, not claimed.** A separate workflow tries to assume the role from
-  outside the environment and passes only if AWS answers `AccessDenied`.
+- **A built-in negative test.** A separate workflow tries to assume the role
+  from outside the environment and passes only if AWS answers `AccessDenied`.
 
 ## Architecture
 
@@ -104,13 +112,13 @@ app/                     FastAPI service, tests, Dockerfile
 terraform/bootstrap/     once per account: state bucket, OIDC provider, budget (local state)
 terraform/infra/         VPC, ECR, ALB, ECS, IAM (S3 backend)
 .github/workflows/
-  ci.yml                 pull requests: pytest, docker build, terraform fmt/validate, tflint, checkov, actionlint
+  ci.yml                 push to main + pull requests: pytest, docker build, terraform fmt/validate, tflint, checkov, actionlint
   deploy.yml             main: build, push, deploy via OIDC
   oidc-negative-test.yml manual: proves the role refuses a job outside production
 docs/
   RUNBOOK.md             step-by-step commands, from empty account to teardown
   trust-policy.md        the rendered trust policy, explained line by line
-  proof/                 screenshots from a real run
+  proof/                 empty until a real run is recorded
 ```
 
 ## How to run it
@@ -134,9 +142,10 @@ definition, so later applies never roll the app back.
 
 ## Proof
 
-Screenshots from a run of this repository (placeholders until recorded):
+This repository has **not** been deployed, so there are no screenshots. If it
+is run following the runbook, these are the captures that prove each claim:
 
-| | |
+| What to capture | File |
 |---|---|
 | Deploy run and job summary | `docs/proof/01-deploy-run.png` |
 | App response with the commit SHA | `docs/proof/02-app-response.png` |
@@ -147,7 +156,7 @@ Screenshots from a run of this repository (placeholders until recorded):
 
 ## Cost and teardown
 
-Roughly **$2 to $2.50 per day** while running in `eu-west-3`: the NAT gateway
+Estimated at roughly **$2 to $2.50 per day** if run in `eu-west-3`: the NAT gateway
 (about half), the load balancer, their public IPv4 addresses, and one
 0.25 vCPU / 0.5 GB Fargate task. Data transfer is negligible for a demo. The environment is meant to live for a few hours, then:
 
