@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# Explicit bash adds -o pipefail, so a failing command in a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
 env:
   # Must match the Terraform outputs of terraform/infra (project_name defaults).
   ECR_REPOSITORY: gha-ecs-oidc-demo
@@ -30,8 +35,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The deploy role only trusts tokens whose sub claim is
-    # repo:<owner>/<repo>:environment:production, which GitHub issues only to
-    # jobs that run in this environment.
+    # repo:<this repository>:environment:production, which GitHub issues only
+    # to jobs that run in this environment.
     environment: production
     permissions:
       id-token: write # request the OIDC token

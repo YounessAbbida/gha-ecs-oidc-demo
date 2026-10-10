@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Explicit bash adds -o pipefail, so a failing command in a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true

@@ -26,6 +26,6 @@ venv/
 .idea/
 .vscode/
 
-# Local assistant files (never committed)
-CLAUDE.md
-.claude/
+# Local tool configuration (never committed)
+[C]LAUDE.md
+.[c]laude/
