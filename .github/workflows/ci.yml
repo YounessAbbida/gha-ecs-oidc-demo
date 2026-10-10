@@ -1,0 +1,130 @@
+name: ci
+
+# Pull request checks. This workflow never receives AWS credentials:
+# no id-token permission, no secrets, no role to assume.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: app (pytest + docker build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Run tests
+        working-directory: app
+        run: |
+          pip install --requirement requirements-dev.txt
+          pytest -q
+
+      - name: Build image (no push)
+        run: docker build --build-arg APP_VERSION="${GITHUB_SHA}" --tag app:ci app
+
+      - name: Smoke test with a read-only root filesystem
+        run: |
+          docker run --detach --name app --read-only --cap-drop ALL \
+            --publish 8080:8080 app:ci
+          for _ in $(seq 1 20); do
+            if curl --silent --fail http://localhost:8080/health; then
+              echo
+              curl --silent --fail http://localhost:8080/
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs app
+          exit 1
+
+  terraform:
+    name: terraform (fmt, validate, tflint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate
+        run: |
+          for dir in terraform/bootstrap terraform/infra; do
+            echo "::group::${dir}"
+            terraform -chdir="${dir}" init -backend=false -input=false
+            terraform -chdir="${dir}" validate
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.64.0
+
+      - name: tflint
+        env:
+          # Used by `tflint --init` to download the AWS ruleset without hitting rate limits.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+          for dir in terraform/bootstrap terraform/infra; do
+            tflint --chdir="${dir}" --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+          done
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Every skipped check is justified inline next to the resource it applies to.
+      - name: checkov
+        run: |
+          pip install checkov==3.3.26
+          checkov --directory . --quiet --compact
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.14"
+          cache: false
+
+      # Installed through the Go module proxy, so the download is verified against the Go checksum database.
+      - name: actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint" -color

@@ -1,0 +1,4 @@
+# Only main.py and requirements.txt are needed in the image.
+*
+!main.py
+!requirements.txt
