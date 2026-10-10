@@ -27,5 +27,5 @@ venv/
 .vscode/
 
 # Local tool configuration (never committed)
-[C]LAUDE.md
-.[c]laude/
+CLAUDE.md
+.claude/
