@@ -13,6 +13,11 @@ output "deploy_role_arn" {
   value       = aws_iam_role.deploy.arn
 }
 
+output "deploy_role_oidc_subject" {
+  description = "The only OIDC sub claim the deploy role accepts."
+  value       = local.github_oidc_subject
+}
+
 output "cluster_name" {
   description = "ECS cluster name."
   value       = aws_ecs_cluster.main.name

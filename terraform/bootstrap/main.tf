@@ -9,7 +9,7 @@ locals {
 # so no DynamoDB table is needed).
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "state" {
-  # checkov:skip=CKV_AWS_18: Access logging needs a second bucket; CloudTrail already records who touched the state.
+  # checkov:skip=CKV_AWS_18: Server access logging needs a second bucket; out of scope for a short-lived demo state bucket.
   # checkov:skip=CKV_AWS_144: Cross-region replication is out of scope for a short-lived demo state bucket.
   # checkov:skip=CKV_AWS_145: SSE-S3 (AES256) is sufficient here; a customer-managed KMS key adds cost and key-policy overhead.
   # checkov:skip=CKV2_AWS_62: No consumer for S3 event notifications on a state bucket.
@@ -106,12 +106,22 @@ resource "aws_s3_bucket_policy" "state" {
 # GitHub Actions OIDC identity provider (one per account).
 # ---------------------------------------------------------------------------
 resource "aws_iam_openid_connect_provider" "github" {
+  count = var.create_oidc_provider ? 1 : 0
+
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
   # No thumbprint_list: with AWS provider v6 the argument is optional, and for
   # GitHub IAM validates the token issuer against its own trusted root CAs, so
   # a pinned thumbprint would be ignored anyway.
+}
+
+# An account can hold only one provider per URL. If it already exists (created
+# for another project), set create_oidc_provider = false to reuse it.
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.create_oidc_provider ? 0 : 1
+
+  url = "https://token.actions.githubusercontent.com"
 }
 
 # ---------------------------------------------------------------------------

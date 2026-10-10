@@ -38,6 +38,7 @@ resource "aws_lb" "app" {
 }
 
 resource "aws_lb_target_group" "app" {
+  # checkov:skip=CKV_AWS_378: ALB to task traffic stays inside the VPC (private subnets, SG-to-SG rule); there is no certificate in this demo.
   name        = var.project_name
   port        = 8080
   protocol    = "HTTP"

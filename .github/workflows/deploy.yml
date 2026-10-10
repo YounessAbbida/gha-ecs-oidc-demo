@@ -14,12 +14,6 @@ on:
 permissions:
   contents: read
 
-# One production deploy at a time. A newer push waits instead of cancelling a
-# rollout that is already in progress.
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
 env:
   # Must match the Terraform outputs of terraform/infra (project_name defaults).
   ECR_REPOSITORY: gha-ecs-oidc-demo
@@ -30,6 +24,9 @@ env:
 
 jobs:
   deploy:
+    # Skipped (not failed) until the repository variables are set, so pushing
+    # the code before the AWS side exists does not run a half-configured deploy.
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The deploy role only trusts tokens whose sub claim is
@@ -39,6 +36,11 @@ jobs:
     permissions:
       id-token: write # request the OIDC token
       contents: read
+    # One production deploy at a time. A newer push waits instead of
+    # cancelling a rollout that is already in progress.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

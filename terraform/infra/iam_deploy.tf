@@ -12,10 +12,18 @@
 locals {
   github_oidc_host = "token.actions.githubusercontent.com"
 
+  # The repository part of the sub claim. Repositories created after
+  # 2026-07-15 use GitHub's immutable format, which adds the numeric owner and
+  # repository IDs (owner@123/repo@456). That format also stops a renamed or
+  # re-created repository with the same name from matching.
+  github_repo_owner   = split("/", var.github_repo)[0]
+  github_repo_name    = split("/", var.github_repo)[1]
+  github_repo_subject = var.github_repo_id == "" ? var.github_repo : "${local.github_repo_owner}@${var.github_owner_id}/${local.github_repo_name}@${var.github_repo_id}"
+
   # Exact subject claim GitHub puts in the OIDC token for a job that declares
   # `environment: <name>`. A job without that environment (a PR, another
   # branch, a fork, another repository) gets a different sub and is rejected.
-  github_oidc_subject = "repo:${var.github_repo}:environment:${var.github_environment}"
+  github_oidc_subject = "repo:${local.github_repo_subject}:environment:${var.github_environment}"
 }
 
 data "aws_iam_policy_document" "deploy_trust" {
@@ -79,9 +87,10 @@ data "aws_iam_policy_document" "deploy" {
     resources = [aws_ecr_repository.app.arn]
   }
 
-  # Read the current revision and register the next one. Scoped to "*" because
-  # these two actions do not support a resource ARN that can be known before
-  # the revision exists.
+  # Read the current revision and register the next one. Resource "*" as in
+  # AWS's documented minimum policy for this flow: DescribeTaskDefinition has
+  # no resource-level permissions, and the new revision has no ARN until
+  # RegisterTaskDefinition creates it.
   statement {
     sid    = "EcsTaskDefinitions"
     effect = "Allow"

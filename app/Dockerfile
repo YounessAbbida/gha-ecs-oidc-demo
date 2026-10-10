@@ -13,11 +13,9 @@ RUN /opt/venv/bin/pip install --requirement /tmp/requirements.txt
 # ---- runtime stage: no pip cache, no build files, non-root ----
 FROM python:3.12-slim-trixie
 
-ARG APP_VERSION=dev
-
-# PYTHONDONTWRITEBYTECODE: never write .pyc files, so the root filesystem can be read-only.
-ENV APP_VERSION=${APP_VERSION} \
-    PATH=/opt/venv/bin:$PATH \
+# PYTHONDONTWRITEBYTECODE: never write .pyc files, so the root filesystem can
+# stay read-only (ECS readonlyRootFilesystem).
+ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -27,6 +25,10 @@ RUN groupadd --system --gid 10001 app \
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
 COPY main.py .
+
+# Declared last so a new version only rebuilds this layer.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 
 USER 10001:10001
 EXPOSE 8080

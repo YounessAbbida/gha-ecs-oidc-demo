@@ -26,14 +26,6 @@ jobs:
       ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
       AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
-      # Without these variables the test would fail for the wrong reason.
-      - name: Check repository variables
-        run: |
-          if [ -z "$ROLE_ARN" ] || [ -z "$AWS_REGION" ]; then
-            echo "::error::Set the AWS_DEPLOY_ROLE_ARN and AWS_REGION repository variables first."
-            exit 1
-          fi
-
       - name: Request an OIDC token for this job
         run: |
           curl --silent --fail \
@@ -49,6 +41,14 @@ jobs:
           print(f"sub = {claims['sub']}")
           PY
 
+      # Without these variables the test would fail for the wrong reason.
+      - name: Check repository variables
+        run: |
+          if [ -z "$ROLE_ARN" ] || [ -z "$AWS_REGION" ]; then
+            echo "::error::Set the AWS_DEPLOY_ROLE_ARN and AWS_REGION repository variables first."
+            exit 1
+          fi
+
       # Same API call configure-aws-credentials makes, run with the AWS CLI so
       # the exact error from STS ends up in the log.
       - name: Try to assume the deploy role (expected to fail)
@@ -56,6 +56,7 @@ jobs:
         continue-on-error: true
         run: |
           aws sts assume-role-with-web-identity \
+            --region "$AWS_REGION" \
             --role-arn "$ROLE_ARN" \
             --role-session-name "gha-negative-${GITHUB_RUN_ID}" \
             --web-identity-token "file://${RUNNER_TEMP}/token" \

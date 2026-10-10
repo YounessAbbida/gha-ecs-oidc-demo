@@ -16,6 +16,12 @@ variable "github_repo" {
   default     = "YounessAbbida/gha-ecs-oidc-demo"
 }
 
+variable "create_oidc_provider" {
+  description = "Create the GitHub Actions OIDC provider. Set to false if the account already has one for token.actions.githubusercontent.com."
+  type        = bool
+  default     = true
+}
+
 variable "budget_limit_usd" {
   description = "Monthly cost budget for the account, in USD."
   type        = number

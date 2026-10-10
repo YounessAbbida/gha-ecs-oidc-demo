@@ -4,7 +4,26 @@
 #   task role:      used by the application code; it needs no AWS access
 # ---------------------------------------------------------------------------
 
-data "aws_iam_policy_document" "ecs_tasks_trust" {
+# Execution role trust: the documented ECS trust policy. It is assumed by the
+# ECS agent before the task starts, so no task-level condition applies here.
+data "aws_iam_policy_document" "execution_trust" {
+  statement {
+    sid     = "EcsTasksAssumeRole"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+# Task role trust: same principal plus the confused-deputy condition AWS
+# recommends for task roles: only ECS acting for this account. (AWS also
+# documents aws:SourceArn, but only as a wildcard over all clusters, so the
+# exact-match account condition is used instead.)
+data "aws_iam_policy_document" "task_trust" {
   statement {
     sid     = "EcsTasksAssumeRole"
     effect  = "Allow"
@@ -15,8 +34,6 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
       identifiers = ["ecs-tasks.amazonaws.com"]
     }
 
-    # Confused-deputy protection: only ECS acting for this account can assume
-    # the role.
     condition {
       test     = "StringEquals"
       variable = "aws:SourceAccount"
@@ -28,7 +45,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 resource "aws_iam_role" "execution" {
   name               = "${var.project_name}-ecs-execution"
   description        = "ECS agent: pull the app image and write its logs"
-  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_trust.json
+  assume_role_policy = data.aws_iam_policy_document.execution_trust.json
 }
 
 # Scoped replacement for the AWS managed AmazonECSTaskExecutionRolePolicy,
@@ -71,5 +88,5 @@ resource "aws_iam_role_policy" "execution" {
 resource "aws_iam_role" "task" {
   name               = "${var.project_name}-ecs-task"
   description        = "Application role: no permissions"
-  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_trust.json
+  assume_role_policy = data.aws_iam_policy_document.task_trust.json
 }

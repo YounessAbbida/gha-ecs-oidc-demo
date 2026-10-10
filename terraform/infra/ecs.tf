@@ -4,11 +4,12 @@ locals {
 }
 
 resource "aws_ecs_cluster" "main" {
+  # checkov:skip=CKV_AWS_65: Container Insights is off: it creates a log group outside Terraform that would survive terraform destroy. App logs and ALB metrics are enough here.
   name = var.project_name
 
   setting {
     name  = "containerInsights"
-    value = "enabled"
+    value = "disabled"
   }
 }
 
@@ -31,16 +32,15 @@ resource "aws_ecs_task_definition" "app" {
     cpu_architecture        = "X86_64"
   }
 
+  # The image tag is a placeholder: no image exists with it. The first deploy
+  # replaces it with the commit SHA, and desired_count stays 0 until then.
   container_definitions = jsonencode([{
     name      = local.container_name
-    # Placeholder tag. No image exists with this tag; the first deploy replaces
-    # it with the commit SHA. desired_count stays 0 until then.
     image     = "${aws_ecr_repository.app.repository_url}:bootstrap"
     essential = true
     user      = "10001:10001"
 
     readonlyRootFilesystem = true
-    privileged             = false
 
     portMappings = [{
       containerPort = local.container_port

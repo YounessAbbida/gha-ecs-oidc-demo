@@ -1,4 +1,5 @@
 data "aws_availability_zones" "available" {
+  # checkov:skip=CKV_AWS_394: The result is cut to the first two AZs with slice() below, so a new AZ cannot widen the deployment.
   state = "available"
 
   # Regular AZs only (no Local Zones or Wavelength Zones).
@@ -13,6 +14,7 @@ locals {
 }
 
 module "vpc" {
+  # checkov:skip=CKV_TF_1: Pinned to an exact registry version (6.7.3 = commit b3abd6df2ecf052451a361ed55b8f06f8742a795); the registry source keeps upgrades reviewable.
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.7.3"
 

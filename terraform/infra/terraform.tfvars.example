@@ -2,6 +2,12 @@
 # desired_count = 0 for the first apply, 1 after the first image is pushed.
 desired_count = 0
 
+# Numeric IDs for GitHub's immutable OIDC subject format (repositories created
+# after 2026-07-15). Get them with:
+#   gh api repos/YounessAbbida/gha-ecs-oidc-demo --jq '.owner.id, .id'
+github_owner_id = ""
+github_repo_id  = ""
+
 # aws_region         = "eu-west-3"
 # github_repo        = "YounessAbbida/gha-ecs-oidc-demo"
 # github_environment = "production"

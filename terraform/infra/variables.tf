@@ -37,6 +37,28 @@ variable "github_environment" {
   }
 }
 
+variable "github_owner_id" {
+  description = "Numeric ID of the GitHub repository owner. Set it (with github_repo_id) when the repository uses GitHub's immutable OIDC subject format, the default for repositories created after 2026-07-15. Leave empty for the legacy owner/name format."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[0-9]*$", var.github_owner_id))
+    error_message = "github_owner_id must be the numeric owner ID, or empty."
+  }
+}
+
+variable "github_repo_id" {
+  description = "Numeric ID of the GitHub repository. Set together with github_owner_id, or leave both empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[0-9]*$", var.github_repo_id)) && ((var.github_repo_id == "") == (var.github_owner_id == ""))
+    error_message = "github_repo_id must be numeric and set together with github_owner_id (or both left empty)."
+  }
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
