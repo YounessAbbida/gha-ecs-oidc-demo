@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored).
+# desired_count = 0 for the first apply, 1 after the first image is pushed.
+desired_count = 0
+
+# aws_region         = "eu-west-3"
+# github_repo        = "YounessAbbida/gha-ecs-oidc-demo"
+# github_environment = "production"

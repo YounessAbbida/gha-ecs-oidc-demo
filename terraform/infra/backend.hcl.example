@@ -1,0 +1,4 @@
+# Copy to backend.hcl (gitignored) and use: terraform init -backend-config=backend.hcl
+bucket = "gha-ecs-oidc-demo-tfstate-<account-id>-eu-west-3" # bootstrap output: state_bucket_name
+key    = "infra/terraform.tfstate"
+region = "eu-west-3"
