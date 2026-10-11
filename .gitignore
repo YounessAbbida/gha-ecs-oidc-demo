@@ -25,7 +25,3 @@ venv/
 .DS_Store
 .idea/
 .vscode/
-
-# Local tool configuration (never committed)
-CLAUDE.md
-.claude/
